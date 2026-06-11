@@ -1,6 +1,6 @@
 {
   "name": "@ipsme/reflector-electron-mqtt-ipc-main",
-  "version": "0.1.0",
+  "version": "0.0.3",
   "description": "Reflector between an MQTT messaging environment and Electron IPC (main process).",
   "exports": {
     "node": {
