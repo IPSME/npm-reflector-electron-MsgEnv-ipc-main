@@ -9,8 +9,9 @@ export default [
 		// dependencies are left external (required at runtime), not bundled
 		external: [
 			'@knev/bitlogr',
+			'@ipsme/msgcache-dedup',
 			'@ipsme/msgenv-mqtt',
-			'@ipsme/msgcache-dedup'
+			'@ipsme/msgenv-electron-nsdnc'
 		]
 	}
 ];

@@ -25,12 +25,16 @@
   },
   "homepage": "https://github.com/IPSME/npm-reflector-electron-MsgEnv-ipc-main#readme",
   "dependencies": {
-    "@ipsme/msgcache-dedup": "^0.1.16",
-    "@ipsme/msgenv-mqtt": "^0.2.9",
-    "@knev/bitlogr": "^3.2.2"
+    "@ipsme/msgcache-dedup": "^0.1.19",
+    "@knev/bitlogr": "^3.4.8"
+  },
+  "optionalDependencies": {
+    "@ipsme/msgenv-electron-nsdnc": "^0.2.3",
+    "@ipsme/msgenv-mqtt": "^0.2.13"
   },
   "devDependencies": {
     "del-cli": "^7.0.0",
-    "rollup": "^4.61.1"
+    "jasmine": "^6.3.0",
+    "rollup": "^4.62.2"
   }
 }

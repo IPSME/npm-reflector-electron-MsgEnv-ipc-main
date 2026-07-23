@@ -1,11 +1,11 @@
 
-const { LOGR, l_array } = require('@knev/bitlogr');
+import { LOGR, l_array } from '@knev/bitlogr';
+import { MsgCache, MsgContext, logr as logr_mc_ } from '@ipsme/msgcache-dedup';
 
 // MQTT is cross-platform, so -- unlike the NSDNC reflector -- there is no per-OS
 // branch here; the MQTT messaging environment is always the one we reflect to/from.
 const IPSME_MsgEnv_OS = require('@ipsme/msgenv-mqtt');
 
-const { MsgCache, MsgContext } = require('@ipsme/msgcache-dedup');
 
 const knr_MSG_EXPIRATION_ms= 20000;
 
@@ -13,11 +13,11 @@ const knr_MSG_EXPIRATION_ms= 20000;
 
 const LOGR_= LOGR.get_instance();
 
-// '@ipsme/msgenv-mqtt' shares this same (global) LOGR instance and occupies bits
-// CONNECTIONS= 0b1<<0 and REFLECTION= 0b1<<1. We start our own labels above those
-// so the reflector can be toggled independently of the messaging environment.
-const logr_= LOGR_.create({ labels: l_array(['Reflector_IPC_main', 'DUPS', 'CXNS', 'REFL'], 0b1 << 2) });
-const l_= logr_.l;
+// The reflector's own logger. It is wired to the *configured* MsgEnv's logger per-instance in
+// the constructor -- not here -- because at module load there is no configured env whose labels
+// we could union with (the env is injected or OS-resolved only at construction).
+const logr_self_ = LOGR_.create({ name: "Reflector_IPC_main", labels: l_array(['DUPLICATES', 'CONNECTIONS', 'REFLECTION']) });
+// ** see constructor() for wire()
 
 //-------------------------------------------------------------------------------------------------
 
@@ -26,6 +26,20 @@ class Reflector_IPC_main {
 		this._msgcache= new MsgCache();
 		this._ipcMain= ipcMain;
 		this._windows= new Set();
+
+		// Wire the reflector's own logger together with the loggers of the participants it uses --
+		// the dedup cache and the *configured* MsgEnv -- so all their label sets share one toggle
+		// mask. Per-instance because the MsgEnv is only known now (injected or OS-resolved).
+		// Feature-detect each: only a participant exposing a v3 logr (has .lref) is wireable; a
+		// legacy build (bitlogr 0.2.x -- e.g. msgcache-dedup <=0.1.16 exports no `logr`) is simply
+		// left to log on its own.
+		const arr_logr= [ logr_self_ ];
+		if (logr_mc_ && typeof logr_mc_.lref?.get === 'function')
+			arr_logr.push(logr_mc_);
+		if (msgEnv.logr && typeof msgEnv.logr.lref?.get === 'function')
+			arr_logr.push(msgEnv.logr);
+		this._logr= LOGR_.wire(arr_logr);
+		this._l= this._logr.l;
 	}
 
 	// -----
@@ -35,7 +49,7 @@ class Reflector_IPC_main {
 	handler_MQTT(msg)
 	{
 		try {
-			logr_.log(l_.REFL, () => ['electron: REFL: mqtt -> ipc -- ', msg]);
+			this._logr.log(this._l.REFLECTION, () => ['msgenv -> ipc -- ', msg]);
 
 			this._msgcache.cache(msg, new MsgContext(knr_MSG_EXPIRATION_ms));
 
@@ -56,11 +70,11 @@ class Reflector_IPC_main {
 	{
 		let [ b_res, ctx ]= this._msgcache.contains(msg)
 		if (b_res) {
-			logr_.log(l_.DUPS, () => ['App: REFL: *DUP | <- ipc -- ', msg]);
+			this._logr.log(this._l.DUPLICATES, () => ['*DUP | <- ipc -- ', msg]);
 			return;
 		}
 
-		logr_.log(l_.REFL, () => ['electron: REFL: mqtt <- ipc -- ', msg]);
+		this._logr.log(this._l.REFLECTION, () => ['msgenv <- ipc -- ', msg]);
 
 		IPSME_MsgEnv_OS.publish(msg);
 	};
@@ -71,8 +85,8 @@ class Reflector_IPC_main {
 		// https://javascript.plainenglish.io/messaging-between-electron-windows-a646b0af7d8d
 		this._ipcMain.on('ipc-reflector-to-main', this.handler_ipc.bind(this) );
 
-		logr_.log(l_.CXNS, () => ['electron: REFL: subscribe']);
 		IPSME_MsgEnv_OS.subscribe( this.handler_MQTT.bind(this) );
+		this._logr.log(this._l.CONNECTIONS, () => ['subscribe']);
 	}
 
 	add_window(win) {
@@ -83,15 +97,11 @@ class Reflector_IPC_main {
 		this._windows.delete(win);
 	}
 
-	static set options(obj) {
+	set options(obj) {
 		this._options= obj;
-		IPSME_MsgEnv_OS.config.options= this._options;
-		if (this._options.logr)
-			LOGR_.toggle(l_, this._options.logr);
 	}
 }
 
 //-------------------------------------------------------------------------------------------------
 
-module.exports.Reflector_IPC_main= Reflector_IPC_main;
-module.exports.l= l_;
+export { Reflector_IPC_main, logr_self_ as logr };
