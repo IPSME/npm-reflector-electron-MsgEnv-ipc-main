@@ -1,6 +1,6 @@
 export default [
 	{
-		input: 'src/reflector-ipc-main.cjs',
+		input: 'src/reflector-ipc-main.mjs',
 		output: {
 			name: "reflector-ipc-main",
 			file: 'dist/reflector-ipc-main.cjs.js',
