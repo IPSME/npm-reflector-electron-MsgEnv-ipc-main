@@ -2,12 +2,22 @@
 import { LOGR, l_array } from '@knev/bitlogr';
 import { MsgCache, MsgContext, logr as logr_mc_ } from '@ipsme/msgcache-dedup';
 
-// MQTT is cross-platform, so -- unlike the NSDNC reflector -- there is no per-OS
-// branch here; the MQTT messaging environment is always the one we reflect to/from.
-const IPSME_MsgEnv_OS = require('@ipsme/msgenv-mqtt');
-
-
 const knr_MSG_EXPIRATION_ms= 20000;
+
+//-------------------------------------------------------------------------------------------------
+
+// The platform-default messaging environment. Resolved lazily, and only when the caller does
+// NOT inject one -- it cannot be a static `import` because the two msgenv packages are per-OS
+// optionalDependencies (only one is ever installed on a given machine, so importing both
+// unconditionally would throw). This bundle targets Electron *main* (CommonJS), so a runtime
+// `require` here is the correct synchronous conditional load.
+function default_MsgEnv() {
+	if (process.platform === 'win32')
+		return require('@ipsme/msgenv-mqtt');
+	if (process.platform === 'darwin')
+		return require('@ipsme/msgenv-electron-nsdnc');
+	throw new Error(`reflector-ipc-main: no default messaging environment for platform '${process.platform}'; inject one into the constructor.`);
+}
 
 //-------------------------------------------------------------------------------------------------
 
@@ -22,10 +32,20 @@ const logr_self_ = LOGR_.create({ name: "Reflector_IPC_main", labels: l_array(['
 //-------------------------------------------------------------------------------------------------
 
 class Reflector_IPC_main {
-	constructor(ipcMain) {
+	// msgEnv defaults to the platform messaging environment (MQTT on win32, NSDNC on darwin);
+	// inject one to override -- e.g. tests, or selecting a non-default ME. An injected env just
+	// needs to expose .publish() / .subscribe().
+	constructor(ipcMain, msgEnv= default_MsgEnv()) {
+		// Fail loud on a provided-but-unusable env (e.g. an explicit null, or a mock missing
+		// part of the contract) rather than deferring to a cryptic later dereference. The
+		// default parameter above only covers an *omitted* argument -- null is not undefined.
+		if (! msgEnv || typeof msgEnv.publish !== 'function' || typeof msgEnv.subscribe !== 'function')
+			throw new Error('Reflector_IPC_main: msgEnv must expose .publish(msg) and .subscribe(handler)');
+
 		this._msgcache= new MsgCache();
 		this._ipcMain= ipcMain;
 		this._windows= new Set();
+		this._msgEnv= msgEnv;
 
 		// Wire the reflector's own logger together with the loggers of the participants it uses --
 		// the dedup cache and the *configured* MsgEnv -- so all their label sets share one toggle
@@ -46,7 +66,7 @@ class Reflector_IPC_main {
 
 	//TODO: handlers should be private
 
-	handler_MQTT(msg)
+	handler_MsgEnv(msg)
 	{
 		try {
 			this._logr.log(this._l.REFLECTION, () => ['msgenv -> ipc -- ', msg]);
@@ -76,7 +96,7 @@ class Reflector_IPC_main {
 
 		this._logr.log(this._l.REFLECTION, () => ['msgenv <- ipc -- ', msg]);
 
-		IPSME_MsgEnv_OS.publish(msg);
+		this._msgEnv.publish(msg);
 	};
 
 	// -----
@@ -85,8 +105,8 @@ class Reflector_IPC_main {
 		// https://javascript.plainenglish.io/messaging-between-electron-windows-a646b0af7d8d
 		this._ipcMain.on('ipc-reflector-to-main', this.handler_ipc.bind(this) );
 
-		IPSME_MsgEnv_OS.subscribe( this.handler_MQTT.bind(this) );
 		this._logr.log(this._l.CONNECTIONS, () => ['subscribe']);
+		this._msgEnv.subscribe( this.handler_MsgEnv.bind(this) );
 	}
 
 	add_window(win) {

@@ -9,6 +9,10 @@
     "default": "./dist/reflector-ipc-main.cjs.js"
   },
   "type": "commonjs",
+  "os": [
+    "darwin",
+    "win32"
+  ],
   "scripts": {
     "build": "rollup --config",
     "test": "test.js",
