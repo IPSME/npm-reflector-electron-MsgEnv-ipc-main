@@ -39,6 +39,7 @@
   },
   "devDependencies": {
     "del-cli": "^7.0.0",
+    "electron": "^43.2.0",
     "jasmine": "^6.3.0",
     "rollup": "^4.62.2"
   }
