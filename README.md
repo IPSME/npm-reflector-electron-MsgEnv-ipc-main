@@ -1,4 +1,4 @@
-# npm-reflector-electron-MQTT-ipc-main
+# npm-reflector-electron-MsgEEnv-ipc-main
 
 A reflector between an **MQTT** messaging environment and **Electron IPC** (main process).
 Messages published to MQTT (topic `IPSME`) are forwarded to every registered renderer
@@ -17,9 +17,9 @@ main.js | electron.js
 
 ```js
 //-------------------------------------------------------------------------------------------------
-// reflector mqtt <-> ipc
+// reflector msgenv <-> ipc
 
-const { Reflector_IPC_main } = require('@ipsme/reflector-electron-mqtt-ipc-main');
+const { Reflector_IPC_main } = require('@ipsme/reflector-electron-msgenv-ipc-main');
 const { ipcMain } = require('electron');
 
 const reflector_IPC_main_ = new Reflector_IPC_main(ipcMain);

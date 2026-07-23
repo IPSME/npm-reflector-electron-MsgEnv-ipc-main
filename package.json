@@ -1,7 +1,7 @@
 {
-  "name": "@ipsme/reflector-electron-mqtt-ipc-main",
   "version": "0.0.3",
-  "description": "Reflector between an MQTT messaging environment and Electron IPC (main process).",
+  "name": "@ipsme/reflector-electron-msgenv-ipc-main",
+  "description": "Reflector between a messaging environment (MQTT on win32, NSDNC on darwin, or an injected one) and Electron IPC (main process).",
   "exports": {
     "node": {
       "require": "./dist/reflector-ipc-main.cjs.js"
@@ -16,14 +16,14 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/IPSME/npm-reflector-electron-MQTT-ipc-main.git"
+    "url": "git+https://github.com/IPSME/npm-reflector-electron-MsgEnv-ipc-main.git"
   },
   "author": "K.Nevelsteen, PhD",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/IPSME/npm-reflector-electron-MQTT-ipc-main/issues"
+    "url": "https://github.com/IPSME/npm-reflector-electron-MsgEnv-ipc-main/issues"
   },
-  "homepage": "https://github.com/IPSME/npm-reflector-electron-MQTT-ipc-main#readme",
+  "homepage": "https://github.com/IPSME/npm-reflector-electron-MsgEnv-ipc-main#readme",
   "dependencies": {
     "@ipsme/msgcache-dedup": "^0.1.16",
     "@ipsme/msgenv-mqtt": "^0.2.9",
