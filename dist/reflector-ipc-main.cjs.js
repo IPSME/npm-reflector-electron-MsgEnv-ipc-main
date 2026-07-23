@@ -1,44 +1,78 @@
 'use strict';
 
-const { LOGR, l_array } = require('@knev/bitlogr');
-
-// MQTT is cross-platform, so -- unlike the NSDNC reflector -- there is no per-OS
-// branch here; the MQTT messaging environment is always the one we reflect to/from.
-const IPSME_MsgEnv_OS = require('@ipsme/msgenv-mqtt');
-
-const { MsgCache, MsgContext } = require('@ipsme/msgcache-dedup');
+var bitlogr = require('@knev/bitlogr');
+var msgcacheDedup = require('@ipsme/msgcache-dedup');
 
 const knr_MSG_EXPIRATION_ms= 20000;
 
 //-------------------------------------------------------------------------------------------------
 
-const LOGR_= LOGR.get_instance();
+// The platform-default messaging environment. Resolved lazily, and only when the caller does
+// NOT inject one -- it cannot be a static `import` because the two msgenv packages are per-OS
+// optionalDependencies (only one is ever installed on a given machine, so importing both
+// unconditionally would throw). This bundle targets Electron *main* (CommonJS), so a runtime
+// `require` here is the correct synchronous conditional load.
+function default_MsgEnv() {
+	if (process.platform === 'win32')
+		return require('@ipsme/msgenv-mqtt');
+	if (process.platform === 'darwin')
+		return require('@ipsme/msgenv-electron-nsdnc');
+	throw new Error(`reflector-ipc-main: no default messaging environment for platform '${process.platform}'; inject one into the constructor.`);
+}
 
-// '@ipsme/msgenv-mqtt' shares this same (global) LOGR instance and occupies bits
-// CONNECTIONS= 0b1<<0 and REFLECTION= 0b1<<1. We start our own labels above those
-// so the reflector can be toggled independently of the messaging environment.
-const logr_= LOGR_.create({ labels: l_array(['Reflector_IPC_main', 'DUPS', 'CXNS', 'REFL'], 0b1 << 2) });
-const l_= logr_.l;
+//-------------------------------------------------------------------------------------------------
+
+const LOGR_= bitlogr.LOGR.get_instance();
+
+// The reflector's own logger. It is wired to the *configured* MsgEnv's logger per-instance in
+// the constructor -- not here -- because at module load there is no configured env whose labels
+// we could union with (the env is injected or OS-resolved only at construction).
+const logr_self_ = LOGR_.create({ name: "Reflector_IPC_main", labels: bitlogr.l_array(['DUPLICATES', 'CONNECTIONS', 'REFLECTION']) });
+// ** see constructor() for wire()
 
 //-------------------------------------------------------------------------------------------------
 
 class Reflector_IPC_main {
-	constructor(ipcMain) {
-		this._msgcache= new MsgCache();
+	// msgEnv defaults to the platform messaging environment (MQTT on win32, NSDNC on darwin);
+	// inject one to override -- e.g. tests, or selecting a non-default ME. An injected env just
+	// needs to expose .publish() / .subscribe().
+	constructor(ipcMain, msgEnv= default_MsgEnv()) {
+		// Fail loud on a provided-but-unusable env (e.g. an explicit null, or a mock missing
+		// part of the contract) rather than deferring to a cryptic later dereference. The
+		// default parameter above only covers an *omitted* argument -- null is not undefined.
+		if (! msgEnv || typeof msgEnv.publish !== 'function' || typeof msgEnv.subscribe !== 'function')
+			throw new Error('Reflector_IPC_main: msgEnv must expose .publish(msg) and .subscribe(handler)');
+
+		this._msgcache= new msgcacheDedup.MsgCache();
 		this._ipcMain= ipcMain;
 		this._windows= new Set();
+		this._msgEnv= msgEnv;
+
+		// Wire the reflector's own logger together with the loggers of the participants it uses --
+		// the dedup cache and the *configured* MsgEnv -- so all their label sets share one toggle
+		// mask. Per-instance because the MsgEnv is only known now (injected or OS-resolved).
+		// Feature-detect each: only a participant exposing a v3 logr (has .lref) is wireable; a
+		// legacy build (bitlogr 0.2.x -- e.g. msgcache-dedup <=0.1.16 exports no `logr`) is simply
+		// left to log on its own.
+		const arr_logr= [ logr_self_ ];
+		if (msgcacheDedup.logr && typeof msgcacheDedup.logr.lref?.get === 'function')
+			arr_logr.push(msgcacheDedup.logr);
+		if (msgEnv.logr && typeof msgEnv.logr.lref?.get === 'function')
+			arr_logr.push(msgEnv.logr);
+		this._logr= LOGR_.wire(arr_logr);
+		this._l= this._logr.l;
 	}
 
 	// -----
 
 	//TODO: handlers should be private
 
-	handler_MQTT(msg)
+	handler_MsgEnv(msg)
 	{
 		try {
-			logr_.log(l_.REFL, () => ['electron: REFL: mqtt -> ipc -- ', msg]);
+			this._logr.log(this._l.REFLECTION, () => ['msgenv -> ipc -- ', msg]);
 
-			this._msgcache.cache(msg, new MsgContext(knr_MSG_EXPIRATION_ms));
+			this._msgcache.cache(msg, new msgcacheDedup.MsgContext(knr_MSG_EXPIRATION_ms));
 
 			this._windows.forEach(window => {
 				console.assert(! (!window || window.isDestroyed()), "invalid window handle; was not properly removed on close?");
@@ -57,13 +91,13 @@ class Reflector_IPC_main {
 	{
 		let [ b_res, ctx ]= this._msgcache.contains(msg);
 		if (b_res) {
-			logr_.log(l_.DUPS, () => ['App: REFL: *DUP | <- ipc -- ', msg]);
+			this._logr.log(this._l.DUPLICATES, () => ['*DUP | <- ipc -- ', msg]);
 			return;
 		}
 
-		logr_.log(l_.REFL, () => ['electron: REFL: mqtt <- ipc -- ', msg]);
+		this._logr.log(this._l.REFLECTION, () => ['msgenv <- ipc -- ', msg]);
 
-		IPSME_MsgEnv_OS.publish(msg);
+		this._msgEnv.publish(msg);
 	};
 
 	// -----
@@ -72,8 +106,8 @@ class Reflector_IPC_main {
 		// https://javascript.plainenglish.io/messaging-between-electron-windows-a646b0af7d8d
 		this._ipcMain.on('ipc-reflector-to-main', this.handler_ipc.bind(this) );
 
-		logr_.log(l_.CXNS, () => ['electron: REFL: subscribe']);
-		IPSME_MsgEnv_OS.subscribe( this.handler_MQTT.bind(this) );
+		this._logr.log(this._l.CONNECTIONS, () => ['subscribe']);
+		this._msgEnv.subscribe( this.handler_MsgEnv.bind(this) );
 	}
 
 	add_window(win) {
@@ -84,15 +118,10 @@ class Reflector_IPC_main {
 		this._windows.delete(win);
 	}
 
-	static set options(obj) {
+	set options(obj) {
 		this._options= obj;
-		IPSME_MsgEnv_OS.config.options= this._options;
-		if (this._options.logr)
-			LOGR_.toggle(l_, this._options.logr);
 	}
 }
 
-//-------------------------------------------------------------------------------------------------
-
-module.exports.Reflector_IPC_main= Reflector_IPC_main;
-module.exports.l= l_;
+exports.Reflector_IPC_main = Reflector_IPC_main;
+exports.logr = logr_self_;

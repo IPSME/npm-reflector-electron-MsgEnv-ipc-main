@@ -1,5 +1,5 @@
 {
-  "version": "0.0.3",
+  "version": "1.0.8",
   "name": "@ipsme/reflector-electron-msgenv-ipc-main",
   "description": "Reflector between a messaging environment (MQTT on win32, NSDNC on darwin, or an injected one) and Electron IPC (main process).",
   "exports": {
