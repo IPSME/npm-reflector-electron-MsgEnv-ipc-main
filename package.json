@@ -15,7 +15,8 @@
   ],
   "scripts": {
     "build": "rollup --config",
-    "test": "test.js",
+    "pretest": "npm run build",
+    "test": "jasmine",
     "clean": "del dist && echo OK"
   },
   "repository": {
