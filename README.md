@@ -13,8 +13,19 @@ The messaging environment is chosen per platform by default:
 | `darwin`          | [`@ipsme/msgenv-electron-nsdnc`](https://github.com/IPSME/npm-msgenv-NSDNC) (NSDistributedNotificationCenter) |
 | anything else     | none — you must inject one (see *Overriding the default* below)                       |
 
-Both msgenv packages are `optionalDependencies`: only the one for your platform needs to be
-installed, and if you inject your own you need neither.
+Both msgenv packages are `optionalDependencies`, and only the one for your platform is ever
+`require`d at runtime -- `default_MsgEnv()` loads MQTT on `win32`, NSDNC on `darwin`. So the app
+runs with just the platform's package present, and if you inject your own (see *Overriding the
+default* below) you need neither.
+
+> **Note:** `optionalDependencies` does *not* make npm install only the platform's package. It
+> means "don't fail the whole install if one of these can't be installed" -- npm skips an optional
+> dep only when it actually *fails* (e.g. an `os`/`cpu` mismatch or a build error). Neither
+> `msgenv-*` package declares an `os` field, so **a default `npm install` installs both on every
+> platform**; the per-platform choice happens purely at runtime in `default_MsgEnv()`. If you want
+> npm to prune the wrong one automatically, those packages would each need an `os` field (`darwin`
+> on NSDNC, `win32` on MQTT) -- nothing in this repo can enforce that. In the meantime you can
+> remove the unused one yourself, or just leave it (harmless, only ever `require`d on its platform).
 
 > ### IPSME — Idempotent Publish/Subscribe Messaging Environment
 > https://dl.acm.org/doi/abs/10.1145/3458307.3460966
